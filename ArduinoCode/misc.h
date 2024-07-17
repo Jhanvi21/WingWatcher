@@ -51,14 +51,14 @@ enum
   STATE_2 = 2
 };
 
-
+#define TIME_TO_SLEEP 20*1000
 #define SPEED_OF_SOUND 0.0343
 
 // Shared Definitions
-#define MASTER_ADDRESS 0x1
-#define SLAVE_ADDRESS  0x2
+#define MASTER_ADDRESS 0x01
+#define SLAVE_ADDRESS  0x02
 
-#define ACK   0x1
-#define NACK  0x2
-
-#define SEED 0x1
+#define ACK             0x01
+#define NACK            0x02
+#define SEED            0x03
+#define INVALID_REQUEST 0x0F

@@ -4,6 +4,8 @@
 #include "camera_pins.h"
 #include "misc.h"
 
+#include <HTTPClient.h>
+#include <WiFiMulti.h>
 
 void startCameraServer();
 void setupLedFlash(int pin);
@@ -90,16 +92,15 @@ void cameraSetup()
   } else {
     // Best option for face detection/recognition
     config.frame_size = FRAMESIZE_240X240;
-    
-    // #if CONFIG_IDF_TARGET_ESP32S3
-    //     config.fb_count = 2;
-    // #endif
+#if CONFIG_IDF_TARGET_ESP32S3
+    config.fb_count = 2;
+#endif
   }
 
-  // #if defined(CAMERA_MODEL_ESP_EYE)
-  //   pinMode(13, INPUT_PULLUP);
-  //   pinMode(14, INPUT_PULLUP);
-  // #endif
+#if defined(CAMERA_MODEL_ESP_EYE)
+  pinMode(13, INPUT_PULLUP);
+  pinMode(14, INPUT_PULLUP);
+#endif
 
   // camera init
   esp_err_t err = esp_camera_init(&config);
@@ -120,19 +121,19 @@ void cameraSetup()
     s->set_framesize(s, FRAMESIZE_QVGA);
   }
 
-// #if defined(CAMERA_MODEL_M5STACK_WIDE) || defined(CAMERA_MODEL_M5STACK_ESP32CAM)
-//   s->set_vflip(s, 1);
-//   s->set_hmirror(s, 1);
-// #endif
+#if defined(CAMERA_MODEL_M5STACK_WIDE) || defined(CAMERA_MODEL_M5STACK_ESP32CAM)
+  s->set_vflip(s, 1);
+  s->set_hmirror(s, 1);
+#endif
 
-// #if defined(CAMERA_MODEL_ESP32S3_EYE)
-//   s->set_vflip(s, 1);
-// #endif
+#if defined(CAMERA_MODEL_ESP32S3_EYE)
+  s->set_vflip(s, 1);
+#endif
 
 // Setup LED FLash if LED pin is defined in camera_pins.h
-// #if defined(LED_GPIO_NUM)
-//   setupLedFlash(LED_GPIO_NUM);
-// #endif
+#if defined(LED_GPIO_NUM)
+  setupLedFlash(LED_GPIO_NUM);
+#endif
 }
 
 /****************************************************************/
@@ -157,32 +158,68 @@ bool birdIsGone()
 }
 
 /****************************************************************/
+// Server HTTP Code
+/****************************************************************/
+
+bool seedLowNotification()
+{
+  HTTPClient http;
+
+  http.begin("http://34.205.232.48:8000/rt-notification");
+
+  int responseCode = http.GET();
+
+  // Negative on Error
+  if (responseCode == HTTP_CODE_OK)
+  {
+    return true;
+  }
+  else
+  {
+    return false;
+  }
+
+}
+
+/****************************************************************/
 // Notification Code
 /****************************************************************/
-void receiveEvent()
+volatile uint8_t i2c_response = 0;
+ 
+void receiveEvent(int howMany)
 {
-  int event = Wire.read();    // receive byte as an integer
+  uint8_t event = Wire.read();    // receive byte as an integer
 
   switch (event)
   {
     case SEED:
-      refillSeedNotification();
       Serial.println("Seed request");
+      refillSeedNotification();
       break;
     default:
-      Wire.write(INVALID_REQUEST);
       Serial.println("Invalid request");
+      Serial.println(event);         // print the integer
+      i2c_response = INVALID_REQUEST;
       break;
   }
+}
 
-  Serial.println(event);         // print the integer
+void requestEvent()
+{
+  Wire.write(i2c_response);
 }
 
 void refillSeedNotification()
 {
   //Send notification
-  Serial.println("SendACK");
-  Wire.write(ACK);
+  if (seedLowNotification())
+  {
+    i2c_response = ACK;
+  }
+  else
+  {
+    i2c_response = NACK;
+  }
 }
 
 /****************************************************************/
@@ -193,12 +230,7 @@ void setup()
   Serial.begin(115200);
   Serial.setDebugOutput(true);
 
-  log_d("Total heap: %d", ESP.getHeapSize());
-  log_d("Free heap: %d", ESP.getFreeHeap());
-  log_d("Total PSRAM: %d", ESP.getPsramSize());
-  log_d("Free PSRAM: %d", ESP.getFreePsram());
-
-  cameraSetup();
+  // cameraSetup();
   wifiSetup();
 
   pinMode(interruptPin, INPUT);
@@ -206,7 +238,9 @@ void setup()
   pinMode(testLedPin, OUTPUT);
 
   Wire.begin(SLAVE_ADDRESS);
-  Wire.onRequest(receiveEvent);
+  Wire.onReceive(receiveEvent);
+  Wire.onRequest(requestEvent);
+
 }
 
 void loop()
@@ -221,5 +255,5 @@ void loop()
   {
     digitalWrite(testLedPin, HIGH);
   }
-  delay(1000);
+  delay(10);
 }

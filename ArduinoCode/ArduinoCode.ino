@@ -21,6 +21,9 @@ int espPin = ESP_PIN;
 int fsrPin = FSR_PIN;
 
 int state;
+
+bool one_time_run = false;
+int calibrationTime = 10;
 /****************************************************************/
 // Timing Code
 /****************************************************************/
@@ -35,15 +38,15 @@ void setTimerToZero()
 /****************************************************************/
 bool isBirdGone()
 {
-  // timer.pause(); // pause the timer
+  timer.pause(); // pause the timer
   
-  if (timer.read() > (20*1000))
+  if (timer.read() > (TIME_TO_SLEEP))
   {
     return true;
   }
   
   // Serial.println(timer.read());
-  // timer.resume(); // resume the timer
+  timer.resume(); // resume the timer
 
   return false;
 }
@@ -52,6 +55,9 @@ bool isBirdGone()
 void lookForBirds()
 {
   int motion = digitalRead(motionSensorPin);
+  Serial.println("motion");
+  Serial.println(motion);
+
   if (motion == LOW)
   {
     digitalWrite(testLedPin, HIGH);  // detected motion
@@ -110,7 +116,7 @@ bool hasSeedInStorage()
   if (distance > 250 || distance < 7)
   {
     Serial.println("has seed");
-    return true;
+    return false;
   }
   
   Serial.println("no seed");
@@ -119,10 +125,9 @@ bool hasSeedInStorage()
 /****************************************************************/
 // FSR Sensor
 /****************************************************************/
-int fsrReading = 0;
-
 bool hasSeedsOnTray()
 {
+  int fsrReading = 0;
   fsrReading = analogRead(fsrPin);
 
   if (fsrReading > 10)
@@ -158,6 +163,7 @@ void wakeUpNow()
   delay(15);
   setTimerToZero();
   state = STATE_1;
+  one_time_run = true;
 }
 
 void sleepNow()
@@ -182,8 +188,6 @@ void sleepNow()
 /****************************************************************/
 // Main Code
 /****************************************************************/
-int calibrationTime = 10;
-
 void setup()
 {
   Serial.begin(115200);
@@ -210,6 +214,7 @@ void setup()
   digitalWrite(espPin, HIGH);
   
   state = STATE_0;
+  one_time_run = true;
   Wire.begin(MASTER_ADDRESS);
   timer.start(); 
 }
@@ -218,9 +223,12 @@ void loop()
 {
   lookForBirds();
 
-  if (state == STATE_0 || state == STATE_1) // things that should only happen once
+  if (one_time_run) // things that should only happen once
   {
     timer.pause(); // incase this sequence takes a long time
+    
+    int error = -1;
+    uint8_t result = 0;
 
     if (!hasSeedsOnTray())
     {
@@ -230,29 +238,45 @@ void loop()
     if (!hasSeedInStorage())
     {
       Wire.beginTransmission(SLAVE_ADDRESS);
-      Serial.println("Beginning transmission");
+      Wire.setWireTimeout(300);
       Wire.write(SEED);        // sends one byte
-      Wire.requestFrom(SLAVE_ADDRESS, 1); //request one byte
-      int result = Wire.read();
-      Serial.println(result);
-      if (result == ACK)
+      error = Wire.endTransmission();     
+
+      if (error == 0)
       {
-        Serial.println("Notification Sent");
+        delay(10);
+        result = Wire.requestFrom(SLAVE_ADDRESS, 1);
+
+        switch (result)
+        {
+          case ACK:
+            Serial.println("ACK Received");
+            break;
+          case NACK:
+            Serial.println("Notification Error");
+            break;
+          case INVALID_REQUEST:
+            Serial.println("Invalid Request Sent");
+            break;
+          default:
+            Serial.println("Invalid Result");
+            break;
+        }
+        Wire.endTransmission();    // stop transmitting
       }
       else
       {
-        Serial.println("Error");
+        Serial.print("I2C Transmission Error: ");
+        Serial.println(error);
       }
-      Wire.endTransmission();    // stop transmitting
-      //send notification to person
     }
 
-    state = STATE_2;
+    one_time_run = false;
 
     timer.resume();
   }
 
-  if (isBirdGone() && (state == STATE_2))
+  if (isBirdGone() && !one_time_run)
   {
     delay(15);
     timer.stop();
