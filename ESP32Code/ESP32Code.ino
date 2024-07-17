@@ -90,15 +90,16 @@ void cameraSetup()
   } else {
     // Best option for face detection/recognition
     config.frame_size = FRAMESIZE_240X240;
-#if CONFIG_IDF_TARGET_ESP32S3
-    config.fb_count = 2;
-#endif
+    
+    // #if CONFIG_IDF_TARGET_ESP32S3
+    //     config.fb_count = 2;
+    // #endif
   }
 
-#if defined(CAMERA_MODEL_ESP_EYE)
-  pinMode(13, INPUT_PULLUP);
-  pinMode(14, INPUT_PULLUP);
-#endif
+  // #if defined(CAMERA_MODEL_ESP_EYE)
+  //   pinMode(13, INPUT_PULLUP);
+  //   pinMode(14, INPUT_PULLUP);
+  // #endif
 
   // camera init
   esp_err_t err = esp_camera_init(&config);
@@ -119,19 +120,19 @@ void cameraSetup()
     s->set_framesize(s, FRAMESIZE_QVGA);
   }
 
-#if defined(CAMERA_MODEL_M5STACK_WIDE) || defined(CAMERA_MODEL_M5STACK_ESP32CAM)
-  s->set_vflip(s, 1);
-  s->set_hmirror(s, 1);
-#endif
+// #if defined(CAMERA_MODEL_M5STACK_WIDE) || defined(CAMERA_MODEL_M5STACK_ESP32CAM)
+//   s->set_vflip(s, 1);
+//   s->set_hmirror(s, 1);
+// #endif
 
-#if defined(CAMERA_MODEL_ESP32S3_EYE)
-  s->set_vflip(s, 1);
-#endif
+// #if defined(CAMERA_MODEL_ESP32S3_EYE)
+//   s->set_vflip(s, 1);
+// #endif
 
 // Setup LED FLash if LED pin is defined in camera_pins.h
-#if defined(LED_GPIO_NUM)
-  setupLedFlash(LED_GPIO_NUM);
-#endif
+// #if defined(LED_GPIO_NUM)
+//   setupLedFlash(LED_GPIO_NUM);
+// #endif
 }
 
 /****************************************************************/
@@ -191,6 +192,11 @@ void setup()
 {
   Serial.begin(115200);
   Serial.setDebugOutput(true);
+
+  log_d("Total heap: %d", ESP.getHeapSize());
+  log_d("Free heap: %d", ESP.getFreeHeap());
+  log_d("Total PSRAM: %d", ESP.getPsramSize());
+  log_d("Free PSRAM: %d", ESP.getFreePsram());
 
   cameraSetup();
   wifiSetup();
