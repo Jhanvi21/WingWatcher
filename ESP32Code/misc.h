@@ -52,14 +52,18 @@ enum
 };
 
 #define TIME_TO_SLEEP 20*1000
-
 #define SPEED_OF_SOUND 0.0343
 
 // Shared Definitions
-#define MASTER_ADDRESS 0x01
-#define SLAVE_ADDRESS  0x02
+#define MASTER_ADDRESS 8
+#define SLAVE_ADDRESS  9
 
+#define RESET           0x00
 #define ACK             0x01
 #define NACK            0x02
 #define SEED            0x03
+#define IS_BIRD         0x04
+#define BIRD            0x05
+#define NO_BIRD         0x06
+#define SETUP_FINISHED  0x07
 #define INVALID_REQUEST 0x0F
