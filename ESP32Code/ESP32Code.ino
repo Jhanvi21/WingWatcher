@@ -10,6 +10,7 @@
 #include <WiFiMulti.h>
 
 #include "model_data_32x32.h"
+// #include "person_data.h"
 
 // #include "tensorflow/lite/experimental/micro/kernels/micro_ops.h"
 // #include "tensorflow/lite/experimental/micro/micro_error_reporter.h"
@@ -78,7 +79,6 @@ void initModel()
     return;
   }
 
-
   if (tensorArena == NULL)
   { 
     if (psramFound() && psramInit())
@@ -106,19 +106,25 @@ void initModel()
     }
   }
 
-
   Serial.println(ESP.getPsramSize());
   Serial.println(ESP.getFreePsram());
 
-  static tflite::MicroMutableOpResolver<8> microOpResolver;
+  static tflite::MicroMutableOpResolver<9> microOpResolver;
   microOpResolver.AddAdd();
   microOpResolver.AddConv2D();
   microOpResolver.AddDepthwiseConv2D();
   microOpResolver.AddFullyConnected();
   microOpResolver.AddMaxPool2D();
   microOpResolver.AddMul();
+  microOpResolver.AddQuantize();
   microOpResolver.AddReshape();
   microOpResolver.AddSoftmax();
+  // static tflite::MicroMutableOpResolver<5> microOpResolver;
+  // microOpResolver.AddAveragePool2D();
+  // microOpResolver.AddConv2D();
+  // microOpResolver.AddDepthwiseConv2D();
+  // microOpResolver.AddReshape();
+  // microOpResolver.AddSoftmax();
 
 
 // {
@@ -196,19 +202,42 @@ bool isBird()
 
   TfLiteTensor* output = interpreter->output(0);
 
-  // Process the inference results.
-  int8_t birdScore = output->data.uint8[birdIndex];
-  int8_t noBirdScore = output->data.uint8[notBirdIndex];
+  // errorReporter->Report("Output tensor type: %d", output->type);
+  // errorReporter->Report("Output tensor dimensions: %d", output->dims->size);
+  // for (int i = 0; i < output->dims->size; ++i) {
+  //   errorReporter->Report("Output tensor dimension %d: %d", i, output->dims->data[i]);
+  // }
 
-  Serial.println("birdScore");
-  Serial.println(birdScore);
-  Serial.println("noBirdScore");
-  Serial.println(noBirdScore);
+  // Serial.println("Output tensor values:");
+  // for (int i = 0; i < output->dims->data[1]; i++) {
+  //   uint8_t value = output->data.uint8[i];
+  //   Serial.print("Value ");
+  //   Serial.print(i);
+  //   Serial.print(": ");
+  //   Serial.println(value);
+  // }
+
+  // Process the inference results.
+  uint8_t birdScore = output->data.uint8[birdIndex];
+  uint8_t notBirdScore = output->data.uint8[notBirdIndex];
 
   float birdScoreF = (birdScore - output->params.zero_point) * output->params.scale;
-  float notBirdScoreF = (noBirdScore - output->params.zero_point) * output->params.scale;
+  float notBirdScoreF = (notBirdScore - output->params.zero_point) * output->params.scale;
+
+  // Serial.print("birdScoreF: ");
+  // Serial.println(birdScoreF);
+  // Serial.print("notBirdScoreF: ");
+  // Serial.println(notBirdScoreF);
 
   vTaskDelay(1); // to avoid watchdog trigger
+  if (birdScoreF > notBirdScoreF)
+  {
+    return true;
+  }
+  else
+  {
+    return false;
+  }
 }
 
 // ===========================
@@ -220,8 +249,10 @@ bool isBird()
 const char *ssid = "dlink-7B9A";
 const char *password = "beabj84316";
 
-
 // const char *ssid = "Jhanvi";
+// const char *password = "88888888";
+
+// const char *ssid = "Alex's Phone";
 // const char *password = "88888888";
 
 void initWifi()
@@ -305,7 +336,7 @@ void initCamera()
   config.pixel_format = PIXFORMAT_JPEG;  // for streaming
   config.grab_mode = CAMERA_GRAB_LATEST;
   // psramFound() are found
-  config.frame_size = FRAMESIZE_QQVGA;
+  config.frame_size = FRAMESIZE_QVGA;
   config.jpeg_quality = 10;
   config.fb_count = 1;
 
@@ -430,7 +461,7 @@ void initTime(String timezone)
 }
 
 // Get the picture filename based on the current ime
-String getPictureFilename()
+String getPictureVideoFilename(bool isVideo)
 {
   struct tm timeinfo;
   if(!getLocalTime(&timeinfo))
@@ -439,9 +470,17 @@ String getPictureFilename()
     return "";
   }
   char timeString[20];
-  strftime(timeString, sizeof(timeString), "%Y-%m-%d_%H-%M-%S", &timeinfo);
+  strftime(timeString, sizeof(timeString), "%Y%m%d_%H%M%S", &timeinfo);
   Serial.println(timeString);
-  String filename = "/picture_" + String(timeString) +".jpg";
+  String filename;
+  if (isVideo)
+  {
+    filename = "/" + String(timeString) +".mp4";
+  }
+  else
+  {
+    filename = "/" + String(timeString) +".jpg";
+  }
   return filename; 
 }
 
@@ -466,7 +505,6 @@ TfLiteStatus takeSavePhoto(tflite::ErrorReporter* errorReporter, int imageWidth,
   }
 
   errorReporter->Report("Image Captured\n");
-
   if (fb->width == imageWidth && fb->height == imageHeight)
   {
     memcpy(imageData, fb->buf, fb->len);
@@ -474,6 +512,7 @@ TfLiteStatus takeSavePhoto(tflite::ErrorReporter* errorReporter, int imageWidth,
   else
   {
     // Trimming Image
+    Serial.println("Trimming Edge");
     int post = 0;
     int startx = (fb->width - imageWidth) / 2;
     int starty = (fb->height - imageHeight) / 2;
@@ -493,16 +532,15 @@ TfLiteStatus takeSavePhoto(tflite::ErrorReporter* errorReporter, int imageWidth,
   // }
 
   // Path where new picture will be saved in SD Card
-  String path = getPictureFilename();
+  String path = getPictureVideoFilename(false); // true if video
   Serial.printf("Picture file name: %s\n", path.c_str());
   
   // Save picture to microSD card
   fs::FS &fs = SD_MMC; 
   File file = fs.open(path.c_str(),FILE_WRITE);
-
   if(!file)
   {
-    Serial.printf("Failed to open file in writing mode");
+    Serial.println("Failed to open file in writing mode");
   } 
   else
   {
@@ -620,6 +658,7 @@ void refillSeedNotification()
 void setup() 
 {
   Serial.begin(115200);
+  // Wire.begin(ESP_SDA_PIN, ESP_SCL_PIN, 100000, SLAVE_ADDRESS);
   Wire.begin(SLAVE_ADDRESS);
   Wire.onRequest(requestEvent);
   Wire.onReceive(receiveEvent);
@@ -627,7 +666,7 @@ void setup()
 
   initMicroSDCard();
   initModel();
-  // initCamera();
+  initCamera();
   initWifi(); // Wifi has to be before Time
   initTime("EST5EDT,M3.2.0,M11.1.0"); // change this to universal time
 
@@ -638,20 +677,21 @@ void setup()
   i2c_response = SETUP_FINISHED;
   Serial.println(i2c_response);
   // esp_sleep_enable_ext0_wakeup(interruptPin, 1); //1 = High, 0 = Low
+  isBird();
 
 }
 
 void loop()
 {
-  if (birdIsGone())
-  {
-    digitalWrite(testLedPin, LOW);
-    delay(200);
-    sleepNow();
-  }
-  else
-  {
-    digitalWrite(testLedPin, HIGH);
-  }
+  // if (birdIsGone())
+  // {
+  //   digitalWrite(testLedPin, LOW);
+  //   delay(200);
+  //   sleepNow();
+  // }
+  // else
+  // {
+  //   digitalWrite(testLedPin, HIGH);
+  // }
   delay(1000);
 }

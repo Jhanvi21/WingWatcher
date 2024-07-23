@@ -15,10 +15,13 @@
 #define ECHO_PIN         11
 #define TRIG_PIN         12
 #define TEST_PIN         13
-
+//  Arduino 
 #define SCL_PIN          18
 #define SDA_PIN          19
 
+// ESP32-CAM
+#define ESP_SCL_PIN          14
+#define ESP_SDA_PIN          12
 
 // Arduino Analog Pins
 #define FSR_PIN          0
